@@ -16,6 +16,7 @@ from src.grbl_parser import GRBLResponseParser
 from src.grbl_serial import SerialConnection
 from src.grbl_communicator import GRBLCommunicator
 from src.grbl_controller import GRBLController
+from src.logger import logger, LogLevel
 
 
 class TestGRBLResponseParser(unittest.TestCase):

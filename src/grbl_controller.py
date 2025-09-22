@@ -6,6 +6,7 @@ import time
 from concurrent.futures import Future
 from typing import List, Optional
 from src.event_broker import event_aware
+from src.logger import log_aware, logged, LogLevel
 from src.grbl_interfaces import IGRBLStatus, IGRBLConnection, IGRBLMovement, IGRBLCommunication
 from src.grbl_serial import SerialConnection
 from src.grbl_parser import GRBLResponseParser
@@ -40,6 +41,7 @@ class GRBLEvents:
 
 
 @event_aware()
+@log_aware("GRBL")
 class GRBLController(IGRBLConnection, IGRBLStatus, IGRBLMovement, IGRBLCommunication):
     """Refactored GRBL Controller following SOLID principles"""
 
@@ -58,18 +60,16 @@ class GRBLController(IGRBLConnection, IGRBLStatus, IGRBLMovement, IGRBLCommunica
         # Setup callbacks
         self._communicator.set_status_callback(self._handle_status_update)
         self._communicator.set_async_callback(self._handle_async_message)
-        
-        # Debug logging
-        self._debug_enabled = True
 
     # IGRBLConnection Interface
+    @logged(LogLevel.INFO)
     def connect(self, port: str, baudrate: int = 115200) -> bool:
         """Connect to GRBL controller"""
         try:
-            self._log(f"Connecting to {port}:{baudrate}")
+            self.info(f"Connecting to {port}:{baudrate}")
             
             if not self._serial.open(port, baudrate, timeout=2.0):
-                self._log("Failed to open serial connection")
+                self.error("Failed to open serial connection")
                 return False
             
             # Start communicator
@@ -84,32 +84,33 @@ class GRBLController(IGRBLConnection, IGRBLStatus, IGRBLMovement, IGRBLCommunica
                 response = self._communicator.send_command_sync("?", timeout=3.0)
                 if response and any('>' in r for r in response):
                     self._is_connected = True
-                    self._log("✅ Connected successfully")
+                    self.info("Connected successfully")
                     self.emit(GRBLEvents.CONNECTED, True)
                     return True
                 else:
                     raise Exception("No valid GRBL response")
                     
             except Exception as e:
-                self._log(f"Communication test failed: {e}")
+                self.error(f"Communication test failed: {e}")
                 self._cleanup_connection()
                 return False
                 
         except Exception as e:
-            self._log(f"Connection failed: {e}")
+            self.error(f"Connection failed: {e}")
             self._cleanup_connection()
             return False
 
+    @logged(LogLevel.INFO)
     def disconnect(self) -> None:
         """Disconnect from GRBL controller"""
-        self._log("Disconnecting...")
+        self.info("Disconnecting...")
         was_connected = self._is_connected
         
         self._cleanup_connection()
         
         if was_connected:
             self.emit(GRBLEvents.DISCONNECTED)
-            self._log("✅ Disconnected")
+            self.info("Disconnected")
 
     def is_connected(self) -> bool:
         """Check if connected to GRBL"""
@@ -225,14 +226,8 @@ class GRBLController(IGRBLConnection, IGRBLStatus, IGRBLMovement, IGRBLCommunica
         
         self._communicator.send_realtime_command(command)
 
-    # Additional methods for compatibility
-    def enable_verbose_logging(self) -> None:
-        """Enable verbose logging"""
-        self._debug_enabled = True
-
-    def disable_verbose_logging(self) -> None:
-        """Disable verbose logging"""
-        self._debug_enabled = False
+    # Additional methods for compatibility - REMOVED old logging methods
+    # Logging now handled by @log_aware decorator
 
     # Private methods
     def _handle_status_update(self, status_data: dict) -> None:
@@ -264,8 +259,3 @@ class GRBLController(IGRBLConnection, IGRBLStatus, IGRBLMovement, IGRBLCommunica
         self._serial.close()
         self.current_position = [0.0, 0.0, 0.0]
         self.current_status = "Disconnected"
-
-    def _log(self, message: str) -> None:
-        """Debug logging"""
-        if self._debug_enabled:
-            print(f"GRBL: {message}")
