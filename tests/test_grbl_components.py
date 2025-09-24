@@ -3,9 +3,7 @@ Unit tests for refactored GRBL components
 Save as: tmp/test_grbl_components.py
 """
 import unittest
-import threading
-import time
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, patch
 import sys
 import os
 
@@ -14,9 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from src.grbl_parser import GRBLResponseParser
 from src.grbl_serial import SerialConnection
-from src.grbl_communicator import GRBLCommunicator
 from src.grbl_controller import GRBLController
-from src.logger import logger, LogLevel
 
 
 class TestGRBLResponseParser(unittest.TestCase):
