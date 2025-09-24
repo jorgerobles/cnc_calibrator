@@ -11,7 +11,7 @@ from typing import Optional
 class HardwareTestConfig:
     """Configuration for hardware testing"""
     # Serial connection
-    port: str = "COM3"  # Windows default, adjust as needed
+    port: str = "/dev/ttyUSB0"  # Windows default, adjust as needed
     baudrate: int = 115200
     timeout: float = 5.0
     

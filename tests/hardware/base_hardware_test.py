@@ -17,7 +17,8 @@ from tests.hardware.test_config import get_hardware_config, is_hardware_availabl
 
 class BaseHardwareTest(unittest.TestCase):
     """Base class for hardware tests with safety features"""
-    
+
+
     @classmethod
     def setUpClass(cls):
         """Set up hardware connection for all tests in class"""
@@ -134,3 +135,5 @@ class BaseHardwareTest(unittest.TestCase):
                 actual, expected, delta=tolerance,
                 msg=f"Axis {i}: expected {expected:.3f}, got {actual:.3f}, tolerance {tolerance}"
             )
+
+BaseHardwareTest.config=None

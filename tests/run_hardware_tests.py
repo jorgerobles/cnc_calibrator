@@ -10,10 +10,9 @@ import unittest
 from pathlib import Path
 
 # Add project root to Python path
-project_root = Path(__file__).parent
-sys.path.insert(0, str(project_root))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from tests.hardware.test_config import get_hardware_config, is_hardware_available
+from hardware.test_config import get_hardware_config, is_hardware_available
 
 
 def list_available_ports():
@@ -124,7 +123,7 @@ def run_hardware_tests():
         # Load test suite
         loader = unittest.TestLoader()
         suite = unittest.TestSuite()
-        
+
         # Add connection tests
         from tests.hardware.test_hardware_connection import TestHardwareConnection
         suite.addTests(loader.loadTestsFromTestCase(TestHardwareConnection))
