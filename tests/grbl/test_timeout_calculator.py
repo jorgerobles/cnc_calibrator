@@ -9,12 +9,13 @@ import sys
 import os
 
 # Add project root to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..','..')))
 
-from src.grbl_config import GRBLMachineConfig, GRBLConfigParser
-from src.command_analyzer import CommandAnalyzer, CommandType, ParsedCommand
-from src.movement_calculator import MovementCalculator, SafetyMarginProvider
-from src.timeout_calculator import TimeoutCalculator, TimeoutCalculatorService
+# Import directly from specific files to avoid package dependencies
+from grbl.config import GRBLMachineConfig, GRBLConfigParser
+from grbl.timeout.command_analyzer import CommandAnalyzer, CommandType, ParsedCommand
+from grbl.timeout.movement_calculator import MovementCalculator, SafetyMarginProvider
+from grbl.timeout.calculator import TimeoutCalculator, TimeoutCalculatorService
 
 
 class TestGRBLConfigParser(unittest.TestCase):

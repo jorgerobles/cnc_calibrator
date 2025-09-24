@@ -2,10 +2,10 @@
 Timeout Calculator Service - Smart timeout calculation for GRBL commands
 """
 from typing import List, Tuple, Optional
-from src.logger import log_aware, logged, LogLevel
-from src.grbl_config import GRBLMachineConfig, GRBLConfigParser
-from src.command_analyzer import CommandAnalyzer
-from src.movement_calculator import MovementCalculator, SafetyMarginProvider
+from core.logger import log_aware, logged, LogLevel
+from ..config import GRBLMachineConfig, GRBLConfigParser
+from .command_analyzer import CommandAnalyzer
+from .movement_calculator import MovementCalculator, SafetyMarginProvider
 
 
 @log_aware("TimeoutCalc")

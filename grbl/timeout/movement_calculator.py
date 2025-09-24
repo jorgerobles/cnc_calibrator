@@ -3,8 +3,8 @@ Movement Time Calculator - Calculates execution times for GRBL movements (4-axis
 """
 import math
 from typing import Tuple, Optional, List
-from src.grbl_config import GRBLMachineConfig
-from src.command_analyzer import ParsedCommand, CommandType
+from ..config import GRBLMachineConfig
+from .command_analyzer import ParsedCommand, CommandType
 
 
 class MovementCalculator:

@@ -5,12 +5,12 @@ Orchestrates components, maintains same interface as original
 import time
 from concurrent.futures import Future
 from typing import List, Optional
-from src.event_broker import event_aware
-from src.logger import log_aware, logged, LogLevel
-from src.grbl_interfaces import IGRBLStatus, IGRBLConnection, IGRBLMovement, IGRBLCommunication
-from src.grbl_serial import SerialConnection
-from src.grbl_parser import GRBLResponseParser
-from src.grbl_communicator import GRBLCommunicator
+from core.event_broker import event_aware
+from core.logger import log_aware, logged, LogLevel
+from .interfaces import IGRBLStatus, IGRBLConnection, IGRBLMovement, IGRBLCommunication
+from .serial import SerialConnection
+from .parser import GRBLResponseParser
+from .communicator import GRBLCommunicator
 
 
 class GRBLEvents:

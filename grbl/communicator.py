@@ -6,8 +6,8 @@ import time
 import queue
 from concurrent.futures import Future
 from typing import List, Optional, Callable
-from src.grbl_serial import SerialConnection
-from src.grbl_parser import GRBLResponseParser
+from .serial import SerialConnection
+from .parser import GRBLResponseParser
 
 
 class GRBLCommunicator:
