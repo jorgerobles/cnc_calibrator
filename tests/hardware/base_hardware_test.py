@@ -7,12 +7,19 @@ import time
 import sys
 import os
 from typing import Optional
+from datetime import datetime
 
 # Add project root to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from grbl.controller import GRBLController
 from tests.hardware.test_config import get_hardware_config, is_hardware_available
+
+
+def log_with_timestamp(message: str):
+    """Print message with timestamp"""
+    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+    print(f"{timestamp} {message}")
 
 
 class BaseHardwareTest(unittest.TestCase):
@@ -43,7 +50,7 @@ class BaseHardwareTest(unittest.TestCase):
         if not cls.controller.connect(cls.config.port, cls.config.baudrate):
             raise unittest.SkipTest(f"Failed to connect to hardware on {cls.config.port}")
         
-        print(f"✅ Connected to CNC hardware on {cls.config.port}")
+        log_with_timestamp(f"✅ Connected to CNC hardware on {cls.config.port}")
     
     @classmethod
     def tearDownClass(cls):
@@ -53,38 +60,85 @@ class BaseHardwareTest(unittest.TestCase):
             cls.controller.emergency_stop()
             time.sleep(0.5)
             cls.controller.disconnect()
-            print("✅ Disconnected from hardware")
+            log_with_timestamp("✅ Disconnected from hardware")
     
     def setUp(self):
         """Set up for individual test"""
         self.assertTrue(self.controller.is_connected(), "Hardware not connected")
         
-        # Get initial position and status
-        self.initial_position = self.controller.get_position()
-        self.initial_status = self.controller.get_status()
+        # Get initial position and status with single fast query
+        status_data = self.controller._communicator.query_status(timeout=0.2)
+        if status_data:
+            self.initial_position = status_data.get('machine_position', [0.0, 0.0, 0.0])
+            self.initial_status = status_data.get('state', 'Unknown')
+        else:
+            self.initial_position = [0.0, 0.0, 0.0]
+            self.initial_status = 'Unknown'
         
-        print(f"📍 Initial position: {self.initial_position}")
-        print(f"📊 Initial status: {self.initial_status}")
+        log_with_timestamp(f"📍 Initial position: {self.initial_position}")
+        log_with_timestamp(f"📊 Initial status: {self.initial_status}")
+        
+        # Clear Alarm state if present
+        if self.initial_status == 'Alarm':
+            log_with_timestamp("⚠️  Clearing Alarm state with unlock command")
+            try:
+                if self.controller.unlock():
+                    time.sleep(0.3)
+                    
+                    # Verify alarm cleared
+                    status_data = self.controller._communicator.query_status(timeout=0.2)
+                    if status_data:
+                        new_status = status_data.get('state', 'Unknown')
+                        log_with_timestamp(f"✅ Status after unlock: {new_status}")
+                        self.initial_status = new_status
+                        
+                        if new_status == 'Alarm':
+                            self.skipTest("Could not clear Alarm state - machine may need manual reset")
+                else:
+                    self.skipTest("Unlock command failed - machine in Alarm state")
+            except Exception as e:
+                log_with_timestamp(f"❌ Failed to clear alarm: {e}")
+                self.skipTest(f"Exception during unlock: {e}")
         
         # Ensure machine is in safe state
-        if self.initial_status not in ['Idle', 'Hold']:
-            self.controller.emergency_stop()
-            time.sleep(1)
-            self.controller.reset()
-            time.sleep(2)
+        elif self.initial_status.startswith('Hold'):
+            log_with_timestamp("⚠️  Clearing Hold state")
+            self.controller.resume()
+            time.sleep(0.2)
+            
+            # Verify hold cleared
+            status_data = self.controller._communicator.query_status(timeout=0.2)
+            if status_data:
+                self.initial_status = status_data.get('state', 'Unknown')
+                log_with_timestamp(f"✅ Status after resume: {self.initial_status}")
     
     def tearDown(self):
         """Clean up after individual test"""
         if self.controller and self.controller.is_connected():
-            # Stop any movement and return to safe state
+            # Stop any movement
             self.controller.emergency_stop()
-            time.sleep(0.5)
+            time.sleep(0.2)
             
-            # Reset if needed
-            status = self.controller.get_status()
-            if status not in ['Idle']:
-                self.controller.reset()
-                time.sleep(2)
+            # Check final status
+            status_data = self.controller._communicator.query_status(timeout=0.2)
+            if status_data:
+                status = status_data.get('state', 'Unknown')
+                
+                # Clear Alarm state if present
+                if status == 'Alarm':
+                    log_with_timestamp("⚠️  Test left machine in Alarm - clearing")
+                    if self.controller.unlock():
+                        time.sleep(0.2)
+                        log_with_timestamp("✅ Alarm cleared in tearDown")
+                    else:
+                        log_with_timestamp("⚠️  Failed to clear alarm in tearDown")
+                
+                # Clear Hold state if present
+                elif status.startswith('Hold'):
+                    log_with_timestamp("⚠️  Test left machine in Hold - resuming")
+                    self.controller.resume()
+                    time.sleep(0.2)
+                    log_with_timestamp("✅ Hold cleared in tearDown")
     
     def safe_move_relative(self, x: float = 0, y: float = 0, z: float = 0, feed_rate: float = 500):
         """Safely move relative with bounds checking"""

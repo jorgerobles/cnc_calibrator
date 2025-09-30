@@ -4,7 +4,7 @@ Test basic connectivity and communication with real hardware
 """
 import time
 import unittest
-from tests.hardware.base_hardware_test import BaseHardwareTest
+from tests.hardware.base_hardware_test import BaseHardwareTest, log_with_timestamp
 
 
 class TestHardwareConnection(BaseHardwareTest):
@@ -18,7 +18,7 @@ class TestHardwareConnection(BaseHardwareTest):
         status = self.controller.get_status()
         self.assertIsInstance(status, str)
         self.assertNotEqual(status, "Unknown")
-        print(f"✅ Status: {status}")
+        log_with_timestamp(f"✅ Status: {status}")
     
     def test_position_query(self):
         """Test position reporting"""
@@ -30,7 +30,7 @@ class TestHardwareConnection(BaseHardwareTest):
         for coord in position:
             self.assertIsInstance(coord, (int, float))
         
-        print(f"✅ Current position: {position}")
+        log_with_timestamp(f"✅ Current position: {position}")
     
     def test_grbl_settings_query(self):
         """Test reading GRBL settings"""
@@ -43,7 +43,7 @@ class TestHardwareConnection(BaseHardwareTest):
             settings_found = any('$' in line and '=' in line for line in response)
             self.assertTrue(settings_found, "No GRBL settings found in response")
             
-            print(f"✅ Retrieved {len(response)} lines of settings")
+            log_with_timestamp(f"✅ Retrieved {len(response)} lines of settings")
             
         except Exception as e:
             self.fail(f"Failed to query GRBL settings: {e}")
@@ -59,7 +59,7 @@ class TestHardwareConnection(BaseHardwareTest):
         
         self.assertLess(query_time, 1.0, "Status query took too long")
         self.assertIsInstance(status, str)
-        print(f"✅ Status query time: {query_time:.3f}s")
+        log_with_timestamp(f"✅ Status query time: {query_time:.3f}s")
     
     def test_emergency_stop_recovery(self):
         """Test emergency stop and recovery"""
@@ -73,7 +73,7 @@ class TestHardwareConnection(BaseHardwareTest):
         # Check status changed
         status = self.controller.get_status()
         # Status should be Hold or similar (depends on GRBL state)
-        print(f"✅ Status after E-stop: {status}")
+        log_with_timestamp(f"✅ Status after E-stop: {status}")
         
         # Reset to clear
         self.controller.reset()
@@ -81,7 +81,7 @@ class TestHardwareConnection(BaseHardwareTest):
         
         # Should be back to normal
         final_status = self.controller.get_status()
-        print(f"✅ Status after reset: {final_status}")
+        log_with_timestamp(f"✅ Status after reset: {final_status}")
     
     @unittest.skipIf(
         BaseHardwareTest.config and BaseHardwareTest.config.skip_destructive_tests,

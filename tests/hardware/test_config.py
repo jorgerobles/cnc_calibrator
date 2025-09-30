@@ -20,13 +20,14 @@ class HardwareTestConfig:
     max_feed_rate: float = 1000.0    # mm/min
     safe_z_height: float = 5.0       # mm above work surface
     
-    # Test workspace bounds (machine coordinates)
-    min_x: float = -100.0
-    max_x: float = 100.0
-    min_y: float = -100.0
-    max_y: float = 100.0
-    min_z: float = -50.0
-    max_z: float = 0.0
+    # Test workspace bounds (work coordinates based on current machine position)
+    # Machine currently at WPos: [0, 0, 49.249]
+    min_x: float = -10.0
+    max_x: float = 10.0
+    min_y: float = -10.0
+    max_y: float = 10.0
+    min_z: float = 40.0      # Safe zone around current Z=49.249
+    max_z: float = 60.0
     
     # Hardware capabilities
     has_homing: bool = True

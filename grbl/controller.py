@@ -56,6 +56,7 @@ class GRBLController(IGRBLConnection, IGRBLStatus, IGRBLMovement, IGRBLCommunica
         self._is_connected = False
         self.current_position = [0.0, 0.0, 0.0]
         self.current_status = "Unknown"
+        self._work_offsets = [0.0, 0.0, 0.0]  # Current work coordinate offset
         
         # Setup callbacks
         self._communicator.set_status_callback(self._handle_status_update)
@@ -68,27 +69,79 @@ class GRBLController(IGRBLConnection, IGRBLStatus, IGRBLMovement, IGRBLCommunica
         try:
             self.info(f"Connecting to {port}:{baudrate}")
             
-            if not self._serial.open(port, baudrate, timeout=2.0):
+            if not self._serial.open(port, baudrate, timeout=0.5):
                 self.error("Failed to open serial connection")
                 return False
             
             # Start communicator
             self._communicator.start()
             
-            # Wait for GRBL startup and test communication
-            time.sleep(2)
+            # ESP32 boots fast - minimal wait
+            time.sleep(0.3)
             self._serial.reset_input_buffer()
             
-            # Test with status query
+            # Test with status query - short timeout for fast ESP32
             try:
-                response = self._communicator.send_command_sync("?", timeout=3.0)
-                if response and any('>' in r for r in response):
+                status_data = self._communicator.query_status(timeout=0.5)
+                if status_data and 'state' in status_data:
                     self._is_connected = True
-                    self.info("Connected successfully")
+                    self.current_status = status_data['state']
+                    
+                    # Clear Hold state if present (prevents command execution)
+                    if self.current_status.startswith('Hold'):
+                        self.info(f"Machine in {self.current_status} state - clearing hold")
+                        self._communicator.send_realtime_command("~")  # Resume
+                        time.sleep(0.1)  # Brief wait for state change
+                        
+                        # Verify hold cleared
+                        status_data = self._communicator.query_status(timeout=0.5)
+                        if status_data:
+                            self.current_status = status_data['state']
+                            self.debug(f"State after resume: {self.current_status}")
+                    
+                    # Clear Alarm state if present (prevents command execution)
+                    if self.current_status == 'Alarm':
+                        self.info(f"Machine in Alarm state - unlocking")
+                        try:
+                            response = self._communicator.send_command_sync("$X", timeout=2.0)
+                            if any(self._parser.is_ok_response(r) for r in response):
+                                time.sleep(0.2)
+                                # Verify alarm cleared
+                                status_data = self._communicator.query_status(timeout=0.5)
+                                if status_data:
+                                    self.current_status = status_data['state']
+                                    self.info(f"State after unlock: {self.current_status}")
+                            else:
+                                self.warning("Unlock command did not return OK")
+                        except Exception as e:
+                            self.warning(f"Failed to unlock alarm: {e}")
+                    
+                    # Query work offsets to calculate MPos from WPos
+                    self._update_work_offsets()
+                    
+                    # Get fresh status after work offset query to calculate proper MPos
+                    final_status = self._communicator.query_status(timeout=0.5)
+                    if final_status:
+                        # Calculate MPos from WPos + offsets if needed
+                        if 'machine_position' not in final_status and 'work_position' in final_status:
+                            wpos = final_status['work_position']
+                            final_status['machine_position'] = [
+                                wpos[0] + self._work_offsets[0],
+                                wpos[1] + self._work_offsets[1],
+                                wpos[2] + self._work_offsets[2]
+                            ]
+                        
+                        self.current_position = final_status.get('machine_position', [0.0, 0.0, 0.0])
+                        self.current_status = final_status['state']
+                    else:
+                        # Fallback to initial status data
+                        self.current_position = status_data.get('machine_position', [0.0, 0.0, 0.0])
+                    
+                    self.info(f"Connected successfully - Status: {self.current_status}, Position: {self.current_position}, Offsets: {self._work_offsets}")
                     self.emit(GRBLEvents.CONNECTED, True)
                     return True
                 else:
-                    raise Exception("No valid GRBL response")
+                    raise Exception("No valid GRBL status response")
                     
             except Exception as e:
                 self.error(f"Communication test failed: {e}")
@@ -122,10 +175,14 @@ class GRBLController(IGRBLConnection, IGRBLStatus, IGRBLMovement, IGRBLCommunica
         if not self.is_connected():
             raise Exception("GRBL not connected")
         
-        # Force status update
+        # Query status and get position - fast timeout for ESP32
         try:
-            self._communicator.send_command_sync("?", timeout=2.0)
-            return self.current_position.copy()
+            status_data = self._communicator.query_status(timeout=0.5)
+            if status_data and 'machine_position' in status_data:
+                self.current_position = status_data['machine_position']
+                return self.current_position.copy()
+            else:
+                raise Exception("No status response")
         except Exception as e:
             raise Exception(f"Failed to get position: {e}")
 
@@ -135,8 +192,12 @@ class GRBLController(IGRBLConnection, IGRBLStatus, IGRBLMovement, IGRBLCommunica
             return "Disconnected"
         
         try:
-            self._communicator.send_command_sync("?", timeout=2.0)
-            return self.current_status
+            status_data = self._communicator.query_status(timeout=0.5)
+            if status_data and 'state' in status_data:
+                self.current_status = status_data['state']
+                return self.current_status
+            else:
+                return "Unknown"
         except:
             return "Unknown"
 
@@ -147,7 +208,7 @@ class GRBLController(IGRBLConnection, IGRBLStatus, IGRBLMovement, IGRBLCommunica
             response = self._communicator.send_command_sync("$H", timeout=30.0)
             return any(self._parser.is_ok_response(r) for r in response)
         except Exception as e:
-            self._log(f"Homing failed: {e}")
+            self.error(f"Homing failed: {e}")
             return False
 
     def move_to(self, x: float, y: float, z: float, feed_rate: float = None) -> bool:
@@ -161,7 +222,7 @@ class GRBLController(IGRBLConnection, IGRBLStatus, IGRBLMovement, IGRBLCommunica
             response = self._communicator.send_command_sync(command, timeout=30.0)
             return any(self._parser.is_ok_response(r) for r in response)
         except Exception as e:
-            self._log(f"Move failed: {e}")
+            self.error(f"Move failed: {e}")
             return False
 
     def jog_relative(self, x: float = 0, y: float = 0, z: float = 0, feed_rate: float = 1000) -> bool:
@@ -171,7 +232,7 @@ class GRBLController(IGRBLConnection, IGRBLStatus, IGRBLMovement, IGRBLCommunica
             response = self._communicator.send_command_sync(command, timeout=10.0)
             return any(self._parser.is_ok_response(r) for r in response)
         except Exception as e:
-            self._log(f"Jog failed: {e}")
+            self.error(f"Jog failed: {e}")
             return False
 
     def emergency_stop(self) -> bool:
@@ -180,7 +241,7 @@ class GRBLController(IGRBLConnection, IGRBLStatus, IGRBLMovement, IGRBLCommunica
             self._communicator.send_realtime_command("!")
             return True
         except Exception as e:
-            self._log(f"Emergency stop failed: {e}")
+            self.error(f"Emergency stop failed: {e}")
             return False
 
     def resume(self) -> bool:
@@ -189,7 +250,7 @@ class GRBLController(IGRBLConnection, IGRBLStatus, IGRBLMovement, IGRBLCommunica
             self._communicator.send_realtime_command("~")
             return True
         except Exception as e:
-            self._log(f"Resume failed: {e}")
+            self.error(f"Resume failed: {e}")
             return False
 
     def reset(self) -> bool:
@@ -199,7 +260,16 @@ class GRBLController(IGRBLConnection, IGRBLStatus, IGRBLMovement, IGRBLCommunica
             time.sleep(2)
             return True
         except Exception as e:
-            self._log(f"Reset failed: {e}")
+            self.error(f"Reset failed: {e}")
+            return False
+
+    def unlock(self) -> bool:
+        """Unlock GRBL from alarm state ($X command)"""
+        try:
+            response = self._communicator.send_command_sync("$X", timeout=2.0)
+            return any(self._parser.is_ok_response(r) for r in response)
+        except Exception as e:
+            self.error(f"Unlock failed: {e}")
             return False
 
     # IGRBLCommunication Interface
@@ -235,7 +305,17 @@ class GRBLController(IGRBLConnection, IGRBLStatus, IGRBLMovement, IGRBLCommunica
         old_position = self.current_position.copy()
         old_status = self.current_status
         
-        self.current_position = status_data['machine_position']
+        # Calculate MPos from WPos if not provided
+        if 'machine_position' not in status_data and 'work_position' in status_data:
+            wpos = status_data['work_position']
+            # MPos = WPos + WorkOffset
+            status_data['machine_position'] = [
+                wpos[0] + self._work_offsets[0],
+                wpos[1] + self._work_offsets[1],
+                wpos[2] + self._work_offsets[2]
+            ]
+        
+        self.current_position = status_data.get('machine_position', self.current_position)
         self.current_status = status_data['state']
         
         # Emit events if changed
@@ -244,6 +324,37 @@ class GRBLController(IGRBLConnection, IGRBLStatus, IGRBLMovement, IGRBLCommunica
         
         if old_status != self.current_status:
             self.emit(GRBLEvents.STATUS_CHANGED, self.current_status)
+    
+    def _update_work_offsets(self) -> None:
+        """Query and update current work coordinate offsets"""
+        try:
+            # Query work coordinate system offsets - fast timeout
+            response = self._communicator.send_command_sync("$#", timeout=1.0)
+            
+            self.debug(f"Work offset query response: {len(response)} lines")
+            
+            # Parse offset response - format: [G54:x,y,z] or [G54:x,y,z,a]
+            for line in response:
+                # Look for G54-G59 work coordinate systems
+                if any(line.startswith(f'[G5{i}:') for i in range(4, 10)):
+                    try:
+                        # Extract coordinates from [G5x:x,y,z] or [G5x:x,y,z,a]
+                        coords_str = line[line.index(':')+1:line.rindex(']')]
+                        coords = [float(x.strip()) for x in coords_str.split(',')]
+                        if len(coords) >= 3:
+                            self._work_offsets = coords[:3]
+                            self.info(f"Work offsets: {self._work_offsets}")
+                            return
+                    except (ValueError, IndexError) as e:
+                        self.debug(f"Failed to parse work offset line '{line}': {e}")
+                        continue
+            
+            self.warning("No work coordinate offsets found in response - using [0, 0, 0]")
+            
+        except TimeoutError:
+            self.warning("Work offset query timed out - using [0, 0, 0]")
+        except Exception as e:
+            self.warning(f"Work offset query failed: {e} - using [0, 0, 0]")
 
     def _handle_async_message(self, message: str) -> None:
         """Handle async messages from GRBL"""
@@ -259,3 +370,4 @@ class GRBLController(IGRBLConnection, IGRBLStatus, IGRBLMovement, IGRBLCommunica
         self._serial.close()
         self.current_position = [0.0, 0.0, 0.0]
         self.current_status = "Disconnected"
+        self._work_offsets = [0.0, 0.0, 0.0]
