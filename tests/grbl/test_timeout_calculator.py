@@ -349,7 +349,7 @@ class TestSafetyMarginProvider(unittest.TestCase):
         self.assertAlmostEqual(safe_time, expected, places=1)
     
     def test_apply_safety_margin_homing(self):
-        """Test safety margin for homing (highest factor)"""
+        """Test safety margin for homing (3x factor)"""
         calculated_time = 10.0
         safe_time = self.safety.apply_safety_margin(calculated_time, CommandType.HOMING)
         

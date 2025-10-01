@@ -228,8 +228,10 @@ class SafetyMarginProvider:
         # Apply safety margin
         safe_time = calculated_time * factor
         
-        # Enforce limits
+        # Enforce general minimum
         safe_time = max(safe_time, self.minimum_timeout)
+        
+        # Enforce maximum
         safe_time = min(safe_time, self.maximum_timeout)
         
         return safe_time
