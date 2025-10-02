@@ -1,7 +1,7 @@
 # cv/interfaces.py
 # Segregated interfaces for computer vision components
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 import numpy as np
 
@@ -50,4 +50,28 @@ class ICVHardware(ABC):
     @abstractmethod
     def get_camera_info(self) -> Dict[str, Any]:
         """Get camera information"""
+        pass
+
+
+class ICVCalibration(ABC):
+    """Interface for camera calibration management"""
+    
+    @abstractmethod
+    def load_calibration(self, file_path: str) -> bool:
+        """Load calibration from file"""
+        pass
+    
+    @abstractmethod
+    def save_calibration(self, file_path: str) -> bool:
+        """Save calibration to file"""
+        pass
+    
+    @abstractmethod
+    def is_calibrated(self) -> bool:
+        """Check if calibration is loaded"""
+        pass
+    
+    @abstractmethod
+    def get_calibration(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """Get camera matrix and distortion coefficients"""
         pass

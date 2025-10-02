@@ -1,19 +1,20 @@
 # cv/manager.py
-# Lean Camera Manager - Hardware only
+# Camera Manager - Lean hardware management with explicit decorator application
 import cv2
 import numpy as np
 from typing import Optional, Dict, Any, List
 
-from core.event_broker import event_aware
 from .interfaces import ICVConnection, ICVCapture, ICVHardware
 from .events import CameraEvents
 from .utils import get_optimal_camera_backend
 
 
-@event_aware()
-class CameraManager(ICVConnection, ICVCapture, ICVHardware):
-    """Lean camera manager handling only hardware connection and capture"""
-
+class CameraManagerCore(ICVConnection, ICVCapture, ICVHardware):
+    """
+    Core camera manager - pure hardware management
+    No decorators applied - base implementation
+    """
+    
     def __init__(self, camera_id: int = 0, resolution: tuple = (640, 480)):
         self.camera_id = camera_id
         self.resolution = resolution
@@ -83,17 +84,20 @@ class CameraManager(ICVConnection, ICVCapture, ICVHardware):
                     self._is_connected = False
                     self.cap.release()
                     self.cap = None
-                    self.emit(CameraEvents.ERROR, "Camera connected but unable to capture frames")
                 else:
                     self._is_connected = True
             
-            self.emit(CameraEvents.CONNECTED, success)
+            # Emit event if available
+            if hasattr(self, 'emit'):
+                self.emit(CameraEvents.CONNECTED, success)
+            
             return success
             
         except Exception as e:
             error_msg = f"Failed to connect to camera {self.camera_id}: {e}"
-            self.emit(CameraEvents.ERROR, error_msg)
-            self.emit(CameraEvents.CONNECTED, False)
+            if hasattr(self, 'emit'):
+                self.emit(CameraEvents.ERROR, error_msg)
+                self.emit(CameraEvents.CONNECTED, False)
             self._is_connected = False
             return False
 
@@ -106,7 +110,7 @@ class CameraManager(ICVConnection, ICVCapture, ICVHardware):
         was_connected = self._is_connected
         self._is_connected = False
         
-        if was_connected:
+        if was_connected and hasattr(self, 'emit'):
             self.emit(CameraEvents.DISCONNECTED)
 
     def capture_frame(self) -> Optional[np.ndarray]:
@@ -117,17 +121,21 @@ class CameraManager(ICVConnection, ICVCapture, ICVHardware):
         try:
             ret, frame = self.cap.read()
             if ret and frame is not None:
-                self.emit(CameraEvents.FRAME_CAPTURED, frame.copy())
+                if hasattr(self, 'emit'):
+                    self.emit(CameraEvents.FRAME_CAPTURED, frame.copy())
                 return frame
             else:
                 if self._is_connected:
-                    self.emit(CameraEvents.ERROR, "Failed to capture frame")
+                    if hasattr(self, 'emit'):
+                        self.emit(CameraEvents.ERROR, "Failed to capture frame")
                     self._is_connected = False
-                    self.emit(CameraEvents.DISCONNECTED)
+                    if hasattr(self, 'emit'):
+                        self.emit(CameraEvents.DISCONNECTED)
                 return None
         except Exception as e:
             error_msg = f"Error capturing frame: {e}"
-            self.emit(CameraEvents.ERROR, error_msg)
+            if hasattr(self, 'emit'):
+                self.emit(CameraEvents.ERROR, error_msg)
             return None
 
     def set_resolution(self, width: int, height: int) -> bool:
@@ -142,7 +150,9 @@ class CameraManager(ICVConnection, ICVCapture, ICVHardware):
             actual_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             actual_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             
-            self.emit(CameraEvents.RESOLUTION_CHANGED, actual_width, actual_height)
+            if hasattr(self, 'emit'):
+                self.emit(CameraEvents.RESOLUTION_CHANGED, actual_width, actual_height)
+            
             return (actual_width, actual_height) == (width, height)
         
         return True  # Will be applied on next connect
@@ -175,6 +185,21 @@ class CameraManager(ICVConnection, ICVCapture, ICVHardware):
                     "backend": self._get_backend_name(self.cap)
                 })
             except Exception as e:
-                self.emit(CameraEvents.ERROR, f"Error getting camera info: {e}")
+                if hasattr(self, 'emit'):
+                    self.emit(CameraEvents.ERROR, f"Error getting camera info: {e}")
         
         return info
+
+
+# ============================================================================
+# EXPLICIT DECORATOR APPLICATION
+# ============================================================================
+
+from core.event_broker import event_aware
+from .calibration import calibration_aware
+
+# CameraManager: Base manager with event system only
+CameraManager = event_aware()(CameraManagerCore)
+
+# CalibratedCameraManager: Full manager with event system + calibration
+CalibratedCameraManager = calibration_aware()(CameraManager)
